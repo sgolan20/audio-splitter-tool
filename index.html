@@ -19,10 +19,10 @@
         
         <div class="mb-6">
             <label for="audioFile" class="block text-sm font-medium text-gray-700 mb-2">בחר קובץ אודיו</label>
-            <div class="flex items-center justify-center w-full">
+            <div id="dropZone" class="flex items-center justify-center w-full">
                 <label for="audioFile" class="flex flex-col items-center justify-center w-full h-32 border-2 border-purple-300 border-dashed rounded-lg cursor-pointer bg-purple-50 hover:bg-purple-100 transition duration-300">
                     <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                        <i data-lucide="upload-cloud" class="w-10 h-10 mb-3 text-purple-500"></i>
+                        <i id="uploadIcon" data-lucide="upload-cloud" class="w-10 h-10 mb-3 text-purple-500"></i>
                         <p class="mb-2 text-sm text-purple-500"><span class="font-semibold">לחץ להעלאה</span> או גרור לכאן</p>
                         <p class="text-xs text-purple-500">MP3, WAV או OGG</p>
                     </div>
@@ -53,13 +53,64 @@
         const statusDiv = document.getElementById('status');
         const resultDiv = document.getElementById('result');
         const audioFileInput = document.getElementById('audioFile');
+        const dropZone = document.getElementById('dropZone');
+        const uploadIcon = document.getElementById('uploadIcon');
+
+        function handleFileSelect(file) {
+            console.log('File selected:', file);
+            if (file && file.type.startsWith('audio/')) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                audioFileInput.files = dataTransfer.files;
+                uploadIcon.setAttribute('data-lucide', 'check-circle');
+                lucide.createIcons();
+                updateStatus(`הקובץ "${file.name}" נבחר בהצלחה`, 'success');
+            } else {
+                updateStatus('אנא בחר קובץ אודיו תקין', 'error');
+            }
+        }
 
         audioFileInput.addEventListener('change', function(e) {
+            console.log('File input change event');
             if (e.target.files.length > 0) {
-                document.querySelector('[data-lucide="upload-cloud"]').setAttribute('data-lucide', 'check-circle');
-                lucide.createIcons();
+                handleFileSelect(e.target.files[0]);
             }
         });
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('bg-purple-200');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('bg-purple-200');
+        }
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            console.log('File dropped');
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+            handleFileSelect(file);
+        }
 
         splitButton.addEventListener('click', async function() {
             const audioFile = audioFileInput.files[0];
