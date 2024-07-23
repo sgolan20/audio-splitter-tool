@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>כלי לחיתוך קובץ אודיו</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700&display=swap');
+        body {
+            font-family: 'Heebo', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-100 to-blue-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+        <h1 class="text-3xl font-bold text-center mb-6 text-purple-700">כלי לחיתוך קובץ אודיו</h1>
+        
+        <div class="mb-6">
+            <label for="audioFile" class="block text-sm font-medium text-gray-700 mb-2">בחר קובץ אודיו</label>
+            <div class="flex items-center justify-center w-full">
+                <label for="audioFile" class="flex flex-col items-center justify-center w-full h-32 border-2 border-purple-300 border-dashed rounded-lg cursor-pointer bg-purple-50 hover:bg-purple-100 transition duration-300">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                        <i data-lucide="upload-cloud" class="w-10 h-10 mb-3 text-purple-500"></i>
+                        <p class="mb-2 text-sm text-purple-500"><span class="font-semibold">לחץ להעלאה</span> או גרור לכאן</p>
+                        <p class="text-xs text-purple-500">MP3, WAV או OGG</p>
+                    </div>
+                    <input id="audioFile" type="file" class="hidden" accept="audio/*" />
+                </label>
+            </div>
+        </div>
+        
+        <div class="mb-6">
+            <label for="parts" class="block text-sm font-medium text-gray-700 mb-2">מספר חלקים</label>
+            <input type="number" id="parts" min="2" value="2" class="mt-1 block w-full px-3 py-2 bg-white border border-purple-300 rounded-md text-sm shadow-sm placeholder-purple-400
+                focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
+        </div>
+        
+        <button id="splitButton" class="w-full bg-purple-600 text-white rounded-md px-4 py-2 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-300 flex items-center justify-center">
+            <i data-lucide="scissors" class="w-5 h-5 mr-2"></i>
+            חתוך
+        </button>
+        
+        <div id="status" class="mt-4 p-3 rounded-md hidden"></div>
+        <div id="result" class="mt-4"></div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        
+        const splitButton = document.getElementById('splitButton');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const audioFileInput = document.getElementById('audioFile');
+
+        audioFileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                document.querySelector('[data-lucide="upload-cloud"]').setAttribute('data-lucide', 'check-circle');
+                lucide.createIcons();
+            }
+        });
+
+        splitButton.addEventListener('click', async function() {
+            const audioFile = audioFileInput.files[0];
+            const parts = parseInt(document.getElementById('parts').value);
+
+            if (!audioFile) {
+                updateStatus('אנא בחר קובץ אודיו', 'error');
+                return;
+            }
+
+            if (parts < 2) {
+                updateStatus('אנא בחר לפחות 2 חלקים', 'error');
+                return;
+            }
+
+            try {
+                updateStatus('מתחיל בחיתוך הקובץ...', 'info');
+                splitButton.disabled = true;
+                splitButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+                const audioBuffer = await audioFile.arrayBuffer();
+                updateStatus('קובץ האודיו נטען, מפענח...', 'info');
+
+                const context = new (window.AudioContext || window.webkitAudioContext)();
+                const audioSource = await context.decodeAudioData(audioBuffer);
+
+                updateStatus('הקובץ פוענח, מתחיל בחיתוך...', 'info');
+
+                const duration = audioSource.duration;
+                const partDuration = duration / parts;
+
+                let resultHTML = `
+                    <h3 class="text-lg font-semibold mb-2">פרטי החיתוך:</h3>
+                    <p>שם הקובץ: ${audioFile.name}</p>
+                    <p>אורך הקובץ: ${duration.toFixed(2)} שניות</p>
+                    <p>מספר חלקים: ${parts}</p>
+                    <p>אורך כל חלק: ${partDuration.toFixed(2)} שניות</p>
+                    <h4 class="text-lg font-semibold mt-4 mb-2">חלקים:</h4>
+                    <ul class="space-y-2">
+                `;
+
+                for (let i = 0; i < parts; i++) {
+                    updateStatus(`מעבד חלק ${i + 1} מתוך ${parts}...`, 'info');
+
+                    const start = i * partDuration;
+                    const end = (i + 1 === parts) ? duration : (i + 1) * partDuration;
+
+                    const offlineContext = new OfflineAudioContext(audioSource.numberOfChannels, (end - start) * audioSource.sampleRate, audioSource.sampleRate);
+                    const source = offlineContext.createBufferSource();
+                    source.buffer = audioSource;
+                    source.connect(offlineContext.destination);
+                    source.start(0, start, end - start);
+
+                    const renderedBuffer = await offlineContext.startRendering();
+                    const blob = await exportWAV(renderedBuffer);
+
+                    const url = URL.createObjectURL(blob);
+                    resultHTML += `
+                        <li class="bg-purple-100 p-3 rounded-md flex items-center justify-between">
+                            <span>חלק ${i + 1}: ${start.toFixed(2)} - ${end.toFixed(2)} שניות</span>
+                            <a href="${url}" download="part_${i + 1}.wav" class="bg-purple-500 text-white px-3 py-1 rounded-md hover:bg-purple-600 transition duration-300 flex items-center">
+                                <i data-lucide="download" class="w-4 h-4 mr-1"></i>
+                                הורד
+                            </a>
+                        </li>`;
+                }
+
+                resultHTML += '</ul>';
+                resultDiv.innerHTML = resultHTML;
+                lucide.createIcons();
+                updateStatus('החיתוך הושלם בהצלחה!', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                updateStatus('אירעה שגיאה בעת חיתוך הקובץ: ' + error.message, 'error');
+            } finally {
+                splitButton.disabled = false;
+                splitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        function updateStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `mt-4 p-3 rounded-md ${type === 'error' ? 'bg-red-100 text-red-700' : type === 'success' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`;
+            statusDiv.style.display = 'block';
+        }
+
+        function exportWAV(audioBuffer) {
+            const workerCode = `
+                function encodeWAV(samples) {
+                    const buffer = new ArrayBuffer(44 + samples.length * 2);
+                    const view = new DataView(buffer);
+
+                    writeString(view, 0, 'RIFF');
+                    view.setUint32(4, 36 + samples.length * 2, true);
+                    writeString(view, 8, 'WAVE');
+                    writeString(view, 12, 'fmt ');
+                    view.setUint32(16, 16, true);
+                    view.setUint16(20, 1, true);
+                    view.setUint16(22, 1, true);
+                    view.setUint32(24, 44100, true);
+                    view.setUint32(28, 44100 * 2, true);
+                    view.setUint16(32, 2, true);
+                    view.setUint16(34, 16, true);
+                    writeString(view, 36, 'data');
+                    view.setUint32(40, samples.length * 2, true);
+
+                    floatTo16BitPCM(view, 44, samples);
+
+                    return view;
+                }
+
+                function writeString(view, offset, string) {
+                    for (let i = 0; i < string.length; i++) {
+                        view.setUint8(offset + i, string.charCodeAt(i));
+                    }
+                }
+
+                function floatTo16BitPCM(output, offset, input) {
+                    for (let i = 0; i < input.length; i++, offset += 2) {
+                        const s = Math.max(-1, Math.min(1, input[i]));
+                        output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                    }
+                }
+
+                self.onmessage = function(e) {
+                    const wav = encodeWAV(e.data);
+                    self.postMessage(wav);
+                };
+            `;
+
+            const worker = new Worker(URL.createObjectURL(new Blob([workerCode], {type: 'application/javascript'})));
+
+            return new Promise(resolve => {
+                worker.onmessage = e => resolve(new Blob([e.data], {type: 'audio/wav'}));
+                worker.postMessage(audioBuffer.getChannelData(0));
+            });
+        }
+    </script>
+</body>
+</html>
