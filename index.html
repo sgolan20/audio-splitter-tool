@@ -32,8 +32,28 @@
         </div>
         
         <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">שיטת חיתוך</label>
+            <div class="flex items-center space-x-4 space-x-reverse">
+                <label class="inline-flex items-center">
+                    <input type="radio" name="splitMethod" value="parts" checked class="form-radio text-purple-600">
+                    <span class="mr-2">לפי מספר חלקים</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="splitMethod" value="duration" class="form-radio text-purple-600">
+                    <span class="mr-2">לפי אורך בשניות</span>
+                </label>
+            </div>
+        </div>
+        
+        <div id="partsInput" class="mb-6">
             <label for="parts" class="block text-sm font-medium text-gray-700 mb-2">מספר חלקים</label>
             <input type="number" id="parts" min="2" value="2" class="mt-1 block w-full px-3 py-2 bg-white border border-purple-300 rounded-md text-sm shadow-sm placeholder-purple-400
+                focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
+        </div>
+        
+        <div id="durationInput" class="mb-6 hidden">
+            <label for="duration" class="block text-sm font-medium text-gray-700 mb-2">אורך כל חלק (בשניות)</label>
+            <input type="number" id="duration" min="1" value="60" class="mt-1 block w-full px-3 py-2 bg-white border border-purple-300 rounded-md text-sm shadow-sm placeholder-purple-400
                 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
         </div>
         
@@ -55,6 +75,21 @@
         const audioFileInput = document.getElementById('audioFile');
         const dropZone = document.getElementById('dropZone');
         const uploadIcon = document.getElementById('uploadIcon');
+        const partsInput = document.getElementById('partsInput');
+        const durationInput = document.getElementById('durationInput');
+        const splitMethodRadios = document.getElementsByName('splitMethod');
+
+        splitMethodRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'parts') {
+                    partsInput.classList.remove('hidden');
+                    durationInput.classList.add('hidden');
+                } else {
+                    partsInput.classList.add('hidden');
+                    durationInput.classList.remove('hidden');
+                }
+            });
+        });
 
         function handleFileSelect(file) {
             console.log('File selected:', file);
@@ -114,16 +149,26 @@
 
         splitButton.addEventListener('click', async function() {
             const audioFile = audioFileInput.files[0];
-            const parts = parseInt(document.getElementById('parts').value);
+            const splitMethod = document.querySelector('input[name="splitMethod"]:checked').value;
+            let parts, partDuration;
 
             if (!audioFile) {
                 updateStatus('אנא בחר קובץ אודיו', 'error');
                 return;
             }
 
-            if (parts < 2) {
-                updateStatus('אנא בחר לפחות 2 חלקים', 'error');
-                return;
+            if (splitMethod === 'parts') {
+                parts = parseInt(document.getElementById('parts').value);
+                if (parts < 2) {
+                    updateStatus('אנא בחר לפחות 2 חלקים', 'error');
+                    return;
+                }
+            } else {
+                partDuration = parseFloat(document.getElementById('duration').value);
+                if (partDuration <= 0) {
+                    updateStatus('אנא הכנס אורך חלק חיובי', 'error');
+                    return;
+                }
             }
 
             try {
@@ -140,7 +185,12 @@
                 updateStatus('הקובץ פוענח, מתחיל בחיתוך...', 'info');
 
                 const duration = audioSource.duration;
-                const partDuration = duration / parts;
+                
+                if (splitMethod === 'parts') {
+                    partDuration = duration / parts;
+                } else {
+                    parts = Math.ceil(duration / partDuration);
+                }
 
                 let resultHTML = `
                     <h3 class="text-lg font-semibold mb-2">פרטי החיתוך:</h3>
@@ -156,7 +206,7 @@
                     updateStatus(`מעבד חלק ${i + 1} מתוך ${parts}...`, 'info');
 
                     const start = i * partDuration;
-                    const end = (i + 1 === parts) ? duration : (i + 1) * partDuration;
+                    const end = Math.min((i + 1) * partDuration, duration);
 
                     const offlineContext = new OfflineAudioContext(audioSource.numberOfChannels, (end - start) * audioSource.sampleRate, audioSource.sampleRate);
                     const source = offlineContext.createBufferSource();
@@ -225,7 +275,7 @@
                 function writeString(view, offset, string) {
                     for (let i = 0; i < string.length; i++) {
                         view.setUint8(offset + i, string.charCodeAt(i));
-                    }
+                        }
                 }
 
                 function floatTo16BitPCM(output, offset, input) {
